@@ -53,7 +53,7 @@ body{
   line-height:1.5;
   user-select:none;
 }
-button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer;font-size:inherit;}
+button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer;font-size:inherit;touch-action:manipulation;}
 ::selection{background:rgba(216,164,74,.28);}
 
 /* 背景细纹 */
@@ -73,6 +73,7 @@ body::after{
   display:grid;
   grid-template-columns:var(--rail-w) minmax(0,1fr);
   height:100vh;
+  height:100dvh;
   min-width:1080px;
   overflow:hidden;
 }
@@ -351,7 +352,7 @@ body::after{
 .tag.ok{border-color:rgba(79,199,155,.35);color:var(--green);background:rgba(79,199,155,.07);}
 .tag.no{border-color:rgba(239,112,112,.35);color:var(--red);background:rgba(239,112,112,.07);}
 
-.q-area{flex:1 1 auto;min-height:0;overflow-y:auto;padding:28px 26px;display:flex;flex-direction:column;}
+.q-area{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:28px 26px;display:flex;flex-direction:column;}
 .q-area > .q-inner{margin:auto;width:100%;}
 .q-area::-webkit-scrollbar{width:9px;}
 .q-area::-webkit-scrollbar-thumb{background:#1e2b3a;border-radius:9px;border:2px solid transparent;background-clip:content-box;}
@@ -731,7 +732,10 @@ body::after{
   .feedback{padding:13px 14px;}
   .fb-ans{font-size:11.5px;line-height:1.8;}
   .fb-ans .mono{font-size:14px;}
-  .q-foot{padding:10px 12px;gap:8px;}
+  .q-foot{padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));gap:8px;}
+  .q-foot .btn.next{height:44px;min-width:112px;font-size:13.5px;}
+  .inline-next{display:block;}
+  .inline-next .btn{width:100%;height:46px;font-size:14px;}
   .q-foot .left{font-size:10px;line-height:1.5;}
   .btn.next{min-width:104px;height:36px;}
 
@@ -750,6 +754,12 @@ body::after{
   .modal{width:calc(100% - 28px);padding:18px;}
   .qr-box img{width:min(68vw,300px);height:min(68vw,300px);}
 }
+
+/* 卡片内的「继续」：桌面隐藏，手机上作为主按钮 */
+@media (min-width:901px){
+  .inline-next{display:none;}
+}
+.inline-next{margin-top:16px;}
 
 </style>
 </head>
@@ -2042,6 +2052,7 @@ window.DE_DATA = { VERBS, COLLOC_V, COLLOC_A, GROUP_NAMES, PREP_POOL };
     /* 反馈 */
     if (s.answered) {
       body += renderFeedback(s, q);
+      body += '<div class="inline-next"><button class="btn primary" id="nextBtn2">继续 →</button></div>';
     }
     body += '</div>'; /* /q-card */
 
@@ -2057,6 +2068,11 @@ window.DE_DATA = { VERBS, COLLOC_V, COLLOC_A, GROUP_NAMES, PREP_POOL };
     host.innerHTML = head + body + '</div></div>' + foot + '</div>';
 
     wirePractice();
+
+    if (s.answered) {
+      var qa = $('.q-area');
+      if (qa) requestAnimationFrame(function () { qa.scrollTop = qa.scrollHeight; });
+    }
   }
 
   function renderFeedback(s, q) {
@@ -2129,6 +2145,8 @@ window.DE_DATA = { VERBS, COLLOC_V, COLLOC_A, GROUP_NAMES, PREP_POOL };
     if (nb) nb.addEventListener('click', function () { openDrawer(s.q.entry.id); });
     var nx = $('#nextBtn');
     if (nx) nx.addEventListener('click', function () { if (s.answered) serveNext(); });
+    var nx2 = $('#nextBtn2');
+    if (nx2) nx2.addEventListener('click', function () { if (s.answered) serveNext(); });
     var qp = $('#quitPractice');
     if (qp) qp.addEventListener('click', function () {
       if (s.i > 0 || s.answered) quitConfirm();
