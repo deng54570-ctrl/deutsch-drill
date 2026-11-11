@@ -761,6 +761,34 @@ body::after{
 }
 .inline-next{margin-top:16px;}
 
+/* ============================ 一词三态 ============================ */
+.q-card.multi{min-height:0;}
+.mf{margin-top:14px;padding-top:13px;border-top:1px solid rgba(255,255,255,.055);}
+.mf:first-of-type{border-top:0;padding-top:4px;}
+.mf-h{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:9px;}
+.mf-t{font-size:12.5px;font-weight:600;color:var(--gold-2);letter-spacing:.03em;}
+.mf-s{font-size:10.5px;color:var(--dim);line-height:1.5;flex:1;}
+.mf-c{font-size:11.5px;color:#ffb0b0;font-family:var(--serif);}
+.mf.ok .mf-t{color:var(--green);}
+.mf.no .mf-t{color:var(--red);}
+.mf-opts{display:grid;grid-template-columns:1fr 1fr;gap:7px;}
+.opt.sm{min-height:40px;padding:7px 12px;border-radius:10px;}
+.opt.sm .txt{font-size:15.5px;}
+.opt.picked{border-color:rgba(216,164,74,.7);background:rgba(216,164,74,.13);}
+.opt.picked .txt{color:var(--gold-2);}
+.mf .fill-input{height:48px;font-size:19px;}
+.mf-yours{font-size:11px;color:#d99;margin-top:6px;font-family:var(--sans);}
+.mf-no-ans{font-size:11px;color:var(--dim);}
+
+@media (max-width: 900px){
+  .mf-opts{grid-template-columns:1fr 1fr;gap:7px;}
+  .opt.sm{min-height:46px;padding:8px 10px;}
+  .opt.sm .txt{font-size:15.5px;}
+  .mf-h{margin-bottom:7px;}
+  .mf-s{display:none;}
+  .mf{margin-top:12px;padding-top:11px;}
+}
+
 </style>
 </head>
 <body>
@@ -1338,7 +1366,7 @@ window.DE_DATA = { VERBS, COLLOC_V, COLLOC_A, GROUP_NAMES, PREP_POOL };
     items: {},   /* id -> {w,r,rev,mastered,revLeft,ts} */
     notes: {},   /* id -> text */
     stats: { answered: 0, correct: 0, days: {} },
-    settings: { strict: true, size: 20 }
+    settings: { strict: true, size: 20, multi: false }
   };
   function storageOK() {
     try {
@@ -1503,6 +1531,14 @@ window.DE_DATA = { VERBS, COLLOC_V, COLLOC_A, GROUP_NAMES, PREP_POOL };
   function makeQuestion(card) {
     var e = BY_ID[card.eid];
     if (!e) return null;
+    if (card.formKey === 'all') {
+      return {
+        entry: e, card: card, multi: true,
+        fields: ['praes', 'praet', 'perf'].map(function (k) {
+          return { key: k, form: e.forms[k], options: buildOptions(e, k) };
+        })
+      };
+    }
     var f = e.forms[card.formKey] || e.forms[Object.keys(e.forms)[0]];
     return {
       entry: e, form: f, card: card,
@@ -1524,7 +1560,7 @@ window.DE_DATA = { VERBS, COLLOC_V, COLLOC_A, GROUP_NAMES, PREP_POOL };
     browseQ: ''
   };
 
-  function buildDeck(mod, onlyWrong) {
+  function buildDeck(mod, onlyWrong, multi) {
     var cards = [];
     var src = ENTRIES.filter(function (e) {
       if (e.mod !== mod) return false;
@@ -1534,9 +1570,13 @@ window.DE_DATA = { VERBS, COLLOC_V, COLLOC_A, GROUP_NAMES, PREP_POOL };
     });
     src.forEach(function (e) {
       if (e.mod === 'verbs') {
-        ['praes', 'praet', 'perf'].forEach(function (k) {
-          cards.push({ eid: e.id, formKey: k });
-        });
+        if (multi) {
+          cards.push({ eid: e.id, formKey: 'all' });
+        } else {
+          ['praes', 'praet', 'perf'].forEach(function (k) {
+            cards.push({ eid: e.id, formKey: k });
+          });
+        }
       } else {
         cards.push({ eid: e.id, formKey: 'colloc' });
       }
@@ -1556,15 +1596,16 @@ window.DE_DATA = { VERBS, COLLOC_V, COLLOC_A, GROUP_NAMES, PREP_POOL };
     return cards;
   }
 
-  function startSession(mod, mode, onlyWrong) {
-    var deck = buildDeck(mod, !!onlyWrong);
+  function startSession(mod, mode, onlyWrong, multi) {
+    multi = !!multi && mod === 'verbs';
+    var deck = buildDeck(mod, !!onlyWrong, multi);
     if (!deck.length) {
       toast(onlyWrong ? '这个模块还没有错题，先练一轮吧' : '没有可练的题目');
       return;
     }
     S.sess = {
-      mod: mod, mode: mode, deck: deck, i: 0,
-      cur: null, q: null, answered: false, res: null,
+      mod: mod, mode: mode, multi: multi, deck: deck, i: 0,
+      cur: null, q: null, answered: false, res: null, sel: {},
       pending: [], ok: 0, bad: 0, wrongSet: {},
       total: deck.length, done: false
     };
@@ -1588,6 +1629,7 @@ window.DE_DATA = { VERBS, COLLOC_V, COLLOC_A, GROUP_NAMES, PREP_POOL };
     s.q = makeQuestion(s.cur);
     s.answered = false;
     s.res = null;
+    s.sel = {};
     renderPractice();
     refreshChrome();
   }
@@ -1642,6 +1684,14 @@ window.DE_DATA = { VERBS, COLLOC_V, COLLOC_A, GROUP_NAMES, PREP_POOL };
   function queueReviews(card) {
     var s = S.sess;
     var e = BY_ID[card.eid];
+    if (s.multi) {
+      s.pending = [];
+      for (var k = 0; k < 3; k++) {
+        s.pending.push({ eid: card.eid, formKey: 'all', review: true, step: k + 1, total: 3 });
+      }
+      rec(card.eid).revLeft = 3;
+      return;
+    }
     var keys = otherFormKeys(e);
     var start = Math.max(0, keys.indexOf(card.formKey));
     var list = [];
@@ -1879,6 +1929,15 @@ window.DE_DATA = { VERBS, COLLOC_V, COLLOC_A, GROUP_NAMES, PREP_POOL };
       var r = DB.items[e.id]; return r && r.w > 0 && !(r.mastered && r.revLeft === 0);
     });
 
+    var multiOn = !!DB.settings.multi;
+    var modeSeg = isV
+      ? '<span style="color:var(--dim);font-size:11px;letter-spacing:.1em">出题方式</span>' +
+        '<div class="seg" id="multiSeg">' +
+        '<button data-multi="0" class="' + (!multiOn ? 'on' : '') + '">每题一个时态</button>' +
+        '<button data-multi="1" class="' + (multiOn ? 'on' : '') + '">一词三态连做</button>' +
+        '</div>'
+      : '';
+
     var sizeSeg = [20, 50, 'all'].map(function (v) {
       var on = String(DB.settings.size) === String(v);
       return '<button data-size="' + v + '" class="' + (on ? 'on' : '') + '">' + (v === 'all' ? '全部' : v + ' 题') + '</button>';
@@ -1905,6 +1964,7 @@ window.DE_DATA = { VERBS, COLLOC_V, COLLOC_A, GROUP_NAMES, PREP_POOL };
         '<div class="opt-row" style="margin-bottom:14px">' +
           '<span style="color:var(--dim);font-size:11px;letter-spacing:.1em">每轮题量</span>' +
           '<div class="seg" id="sizeSeg">' + sizeSeg + '</div>' +
+          modeSeg +
         '</div>' +
 
         '<div class="start-grid">' +
@@ -1941,11 +2001,17 @@ window.DE_DATA = { VERBS, COLLOC_V, COLLOC_A, GROUP_NAMES, PREP_POOL };
         save(); renderModule();
       });
     });
+    $$('#multiSeg button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        DB.settings.multi = b.dataset.multi === '1';
+        save(); renderModule();
+      });
+    });
     $$('#view-module [data-start]').forEach(function (b) {
       b.addEventListener('click', function () {
         var v = b.dataset.start;
-        if (v === 'wrong') startSession(mod, 'mc', true);
-        else startSession(mod, v, false);
+        if (v === 'wrong') startSession(mod, 'mc', true, DB.settings.multi);
+        else startSession(mod, v, false, DB.settings.multi);
       });
     });
     var gm = $('#goMistakes');
@@ -1995,6 +2061,16 @@ window.DE_DATA = { VERBS, COLLOC_V, COLLOC_A, GROUP_NAMES, PREP_POOL };
           '<button class="icon-btn" id="quitPractice" title="结束本轮">✕</button>' +
         '</div>' +
         '<div class="q-area"><div class="q-inner">';
+
+    if (q.multi) {
+      host.innerHTML = head + multiBody(s, q) + '</div></div>' + multiFoot(s) + '</div>';
+      wireMulti();
+      if (s.answered) {
+        var qa0 = $('.q-area');
+        if (qa0) requestAnimationFrame(function () { qa0.scrollTop = qa0.scrollHeight; });
+      }
+      return;
+    }
 
     var body = '<div class="q-card">' +
       '<div class="q-kicker">' +
@@ -2108,6 +2184,177 @@ window.DE_DATA = { VERBS, COLLOC_V, COLLOC_A, GROUP_NAMES, PREP_POOL };
     }
     html += '</div>';
     return html;
+  }
+
+  /* ---------- 一词三态 ---------- */
+  function multiBody(s, q) {
+    var e = q.entry;
+    var html = '<div class="q-card multi">' +
+      '<div class="q-kicker">' +
+        '<span class="k">一词三态</span><span class="sep"></span>' +
+        '<span class="m">' + (s.mode === 'mc' ? '选择题' : '填空题') + '</span>' +
+        '<span style="flex:1"></span>' +
+        '<button class="icon-btn" id="noteBtn" title="记笔记">✎</button>' +
+      '</div>' +
+      '<div class="q-word">' + esc(e.head) + '</div>' +
+      '<div class="q-cn">' + esc(e.cn) + '</div>' +
+      '<div class="q-ask">把 <b>三个时态</b> 一次做完，然后点「提交答案」</div>';
+
+    q.fields.forEach(function (f, fi) {
+      var r = s.answered ? s.res.fields[fi] : null;
+      html += '<div class="mf ' + (r ? (r.ok ? 'ok' : 'no') : '') + '">' +
+        '<div class="mf-h"><span class="mf-t">' + esc(f.form.name) + '</span>' +
+        '<span class="mf-s">' + esc(f.form.ask) + '</span>' +
+        (r && !r.ok ? '<span class="mf-c">正确：' + esc(f.form.ans.join(' / ')) + '</span>' : '') +
+        '</div>';
+      if (s.mode === 'mc') {
+        html += '<div class="mf-opts">';
+        f.options.forEach(function (o, i) {
+          var cls = 'opt sm';
+          var mark = '';
+          if (s.answered) {
+            if (o.correct) { cls += ' correct'; mark = '<span class="mark">✓</span>'; }
+            else if (r && r.sel === i) { cls += ' wrong'; mark = '<span class="mark">✕</span>'; }
+            else cls += ' dim';
+          } else if (s.sel[f.key] === i) {
+            cls += ' picked';
+          }
+          html += '<button class="' + cls + '" data-f="' + f.key + '" data-i="' + i + '"' +
+            (s.answered ? ' disabled' : '') + '><span class="txt">' + esc(o.label) + '</span>' + mark + '</button>';
+        });
+        html += '</div>';
+      } else {
+        var given = r ? r.given : '';
+        html += '<input class="fill-input mf-in' + (r ? (r.ok ? ' ok' : ' no') : '') + '" data-f="' + f.key + '"' +
+          ' placeholder="' + (f.key === 'perf' ? '第二分词…' : '变位…') + '" value="' + esc(given) + '"' +
+          (s.answered ? ' disabled' : '') + ' autocomplete="off" autocapitalize="off" spellcheck="false">';
+      }
+      html += '</div>';
+    });
+
+    if (s.mode === 'fill' && !s.answered) {
+      html += '<div class="umlauts" id="mfUmlauts">' + ['ä', 'ö', 'ü', 'ß'].map(function (c) {
+        return '<button class="um-btn" data-um="' + c + '">' + c + '</button>';
+      }).join('') + '</div>';
+    }
+    if (s.answered) {
+      html += '<div class="inline-next"><button class="btn primary" id="nextBtn2">继续 →</button></div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function multiFoot(s) {
+    var revLeft = s.cur.review ? (s.pending.length + 1) : 0;
+    var hint;
+    if (s.answered) {
+      hint = s.res.ok ? '三个时态全对 · 点击继续'
+        : (DB.settings.strict ? '有错 · 已加入错题本，需复习 3 遍' : '有错 · 已加入错题本');
+    } else {
+      hint = revLeft ? '错词锁：还需复习 <b>' + revLeft + '</b> 次' : '三态都做完再点「提交答案」';
+    }
+    var btn = s.answered
+      ? '<button class="btn primary next" id="nextBtn">继续 →</button>'
+      : '<button class="btn primary next" id="submitAll">提交答案</button>';
+    return '<div class="q-foot"><div class="left">' + hint + '</div><div class="spacer"></div>' + btn + '</div>';
+  }
+
+  function wireMulti() {
+    var s = S.sess;
+    s.sel = s.sel || {};
+    $$('.mf-opts .opt').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (s.answered) return;
+        var f = btn.dataset.f, i = parseInt(btn.dataset.i, 10);
+        s.sel[f] = i;
+        $$('.mf-opts .opt').forEach(function (b) {
+          if (b.dataset.f === f) b.classList.toggle('picked', parseInt(b.dataset.i, 10) === i);
+        });
+      });
+    });
+    var lastInp = null;
+    $$('.mf-in').forEach(function (inp) {
+      inp.addEventListener('focus', function () { lastInp = inp; });
+      inp.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter') { ev.preventDefault(); submitMulti(); }
+      });
+    });
+    $$('#mfUmlauts .um-btn').forEach(function (b) {
+      b.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        var inp = lastInp || $('.mf-in');
+        if (!inp || inp.disabled) return;
+        var pos = inp.selectionStart == null ? inp.value.length : inp.selectionStart;
+        var end = inp.selectionEnd == null ? pos : inp.selectionEnd;
+        inp.value = inp.value.slice(0, pos) + b.dataset.um + inp.value.slice(end);
+        inp.focus();
+        inp.selectionStart = inp.selectionEnd = pos + 1;
+      });
+    });
+    var sa = $('#submitAll');
+    if (sa) sa.addEventListener('click', submitMulti);
+    var nb = $('#noteBtn');
+    if (nb) nb.addEventListener('click', function () { openDrawer(s.q.entry.id); });
+    var nx2 = $('#nextBtn2');
+    if (nx2) nx2.addEventListener('click', function () { if (s.answered) serveNext(); });
+    var nx = $('#nextBtn');
+    if (nx) nx.addEventListener('click', function () { if (s.answered) serveNext(); });
+    var qp = $('#quitPractice');
+    if (qp) qp.addEventListener('click', function () { quitConfirm(); });
+  }
+
+  function submitMulti() {
+    var s = S.sess;
+    if (!s || s.answered || !s.q) return;
+    var q = s.q;
+    var results = [], missing = 0, okCount = 0;
+    q.fields.forEach(function (f) {
+      var given = '', ok = false, sel = null;
+      if (s.mode === 'mc') {
+        sel = s.sel[f.key];
+        if (sel == null) { missing++; return; }
+        ok = !!f.options[sel].correct;
+        given = f.options[sel].label;
+      } else {
+        var inp = $('.mf-in[data-f="' + f.key + '"]');
+        given = inp ? inp.value.trim() : '';
+        if (!given) { missing++; return; }
+        ok = f.form.ans.some(function (a) { return norm(a) === norm(given); });
+      }
+      if (ok) okCount++;
+      results.push({ key: f.key, ok: ok, given: given, sel: sel });
+    });
+    if (missing) { toast('还有 ' + missing + ' 个时态没作答'); return; }
+
+    var allOK = okCount === q.fields.length;
+    var e = q.entry;
+    var r = rec(e.id);
+    r.ts = Date.now();
+    DB.stats.answered += q.fields.length;
+    DB.stats.correct += okCount;
+    var tk = todayKey();
+    DB.stats.days[tk] = (DB.stats.days[tk] || 0) + q.fields.length;
+
+    s.answered = true;
+    s.res = { ok: allOK, fields: results };
+    if (allOK) {
+      r.r++;
+      s.ok++;
+      if (s.cur.review) {
+        r.rev++;
+        r.revLeft = Math.max(0, s.pending.length);
+        if (s.pending.length === 0) { r.mastered = true; r.revLeft = 0; }
+      }
+    } else {
+      r.w++;
+      r.mastered = false;
+      s.bad++;
+      s.wrongSet[e.id] = 1;
+      if (DB.settings.strict) queueReviews(s.cur);
+    }
+    save();
+    renderPractice();
+    refreshChrome();
   }
 
   function wirePractice() {
@@ -2261,7 +2508,7 @@ window.DE_DATA = { VERBS, COLLOC_V, COLLOC_A, GROUP_NAMES, PREP_POOL };
     $$('#view-mistakes [data-prac]').forEach(function (b) {
       b.addEventListener('click', function () {
         var e = BY_ID[b.dataset.prac];
-        startSession(e.mod, S.mode, true);
+        startSession(e.mod, S.mode, true, DB.settings.multi);
       });
     });
     var pa = $('#pracAllWrong');
