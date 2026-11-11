@@ -2427,7 +2427,7 @@ window.DE_DATA = { VERBS, COLLOC_V, COLLOC_A, GROUP_NAMES, PREP_POOL };
           '<button class="btn ghost" id="toHome">回到概览</button>' +
         '</div>' +
       '</div></div></div></div>';
-    $('#againBtn').addEventListener('click', function () { startSession(s.mod, s.mode, false); });
+    $('#againBtn').addEventListener('click', function () { startSession(s.mod, s.mode, false, s.multi); });
     $('#toMistakes').addEventListener('click', function () { go('mistakes'); });
     $('#toHome').addEventListener('click', function () { S.sess = null; go('home'); });
     refreshChrome();
